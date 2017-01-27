@@ -14,6 +14,7 @@ import java.nio.ByteOrder;
  */
 
 public class WAVWriter {
+
     /**
      * Writes the proper 44-byte RIFF/WAVE header to/for the given stream
      * Two size fields are left empty/null since we do not yet know the final stream size

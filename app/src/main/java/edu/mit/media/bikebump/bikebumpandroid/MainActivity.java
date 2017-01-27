@@ -27,9 +27,13 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.io.RandomAccessFile;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URL;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.ArrayDeque;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -70,6 +74,7 @@ public class MainActivity extends AppCompatActivity {
 
     //linkedlist
     ArrayDeque<byte[]> queue = new ArrayDeque<>();
+    AtomicBoolean audioWaiting = new AtomicBoolean(false);
     AtomicBoolean save = new AtomicBoolean(false);//is currently saving or not
 
     @Override
@@ -209,8 +214,9 @@ public class MainActivity extends AppCompatActivity {
                 displayMax(fft.binToHz(maxIndex, SAMPLE_RATE), max);
 
                 if (Math.abs(fft.binToHz(maxIndex, SAMPLE_RATE) - 3000) < 200 && max > 30
-                            && queue.size() > MAX_BYTES - 4 && !save.get()) {
+                            && queue.size() > MAX_BYTES - 4 && queue.size() <= MAX_BYTES && !audioWaiting.get()) {
                     Log.d(LOG_TAG, "saving audio");
+                    audioWaiting.set(true);
                     saveAudio();
                     requestStreet();
                 }
@@ -295,6 +301,7 @@ public class MainActivity extends AppCompatActivity {
                         ex.printStackTrace();
                     }
                     save.set(false);
+                    audioWaiting.set(false);
 
                 }
                 catch (FileNotFoundException e) {
@@ -323,11 +330,13 @@ public class MainActivity extends AppCompatActivity {
             InputStreamReader isw = new InputStreamReader(in);
 
             int data = isw.read();
+            String out = "";
             while (data != -1) {
                 char current = (char) data;
                 data = isw.read();
-                System.out.print(current);
+                out += current;
             }
+            displayJSON(out);
         } catch (Exception e) {
             e.printStackTrace();
         } finally {
@@ -336,6 +345,19 @@ public class MainActivity extends AppCompatActivity {
             }
         }
     }
+
+    void displayJSON(final String s) {
+
+        runOnUiThread(new Runnable() {
+            public void run() {
+                roadText.setText(s);
+            }
+        });
+    }
+
+
+
+
 
 
 
