@@ -1,11 +1,18 @@
 package edu.mit.media.bikebump.bikebumpandroid;
 
 import android.Manifest;
+import android.content.Context;
+import android.content.DialogInterface;
+import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
 import android.media.AudioFormat;
 import android.os.Environment;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
+import android.support.v7.app.AlertDialog;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
@@ -13,16 +20,17 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.OutputStream;
-import java.io.RandomAccessFile;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URI;
+import java.net.URL;
 import java.util.ArrayDeque;
-import java.util.LinkedList;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import be.tarsos.dsp.AudioDispatcher;
@@ -46,19 +54,23 @@ public class MainActivity extends AppCompatActivity {
     final int SECONDS_AUDIO = 10;
     final int BITS_IN_BYTES = 2;
     final int MAX_BYTES = SAMPLE_RATE * BITS_IN_BYTES * SECONDS_AUDIO / (BUFFER_SIZE * 2); //how many byte arrays fit in 10 sec
-    int counter = 0;
+    double longitude, latitude;
 
     private static final String TAG = MainActivity.class.getName();
     boolean mShouldContinue; //continue recording or not
     TextView maxText; //displays frequency with highest output
+    TextView locText;
+    TextView roadText;
 
     Button start;
     Button stop;
     AudioDispatcher dispatcher;
+    LocationManager locationManager;
+    LocationListener locationListener;
 
     //linkedlist
     ArrayDeque<byte[]> queue = new ArrayDeque<>();
-    AtomicBoolean save = new AtomicBoolean(false);
+    AtomicBoolean save = new AtomicBoolean(false);//is currently saving or not
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -68,35 +80,28 @@ public class MainActivity extends AppCompatActivity {
         start = (Button) findViewById(R.id.btnStart);
         stop = (Button) findViewById(R.id.btnStop);
         maxText = (TextView) findViewById(R.id.max_text);
+        locText = (TextView) findViewById(R.id.locations_text);
+        roadText = (TextView) findViewById(R.id.roads_text);
 
-        if (ContextCompat.checkSelfPermission(this,
-                Manifest.permission.RECORD_AUDIO)
-                != PackageManager.PERMISSION_GRANTED) {
-
-
-            // No explanation needed, we can request the permission.
-
-            ActivityCompat.requestPermissions(this,
-                    new String[]{Manifest.permission.RECORD_AUDIO,},
-                    0);
-
-            // MY_PERMISSIONS_REQUEST_READ_CONTACTS is an
-            // app-defined int constant. The callback method gets the
-            // result of the request.
-        }
-        if (ContextCompat.checkSelfPermission(this,
-                Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                != PackageManager.PERMISSION_GRANTED) {
-
-                ActivityCompat.requestPermissions(this,
-                        new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE},
-                        0);
-        }
+        checkPermissions();
 
         start.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                recordAudio();
+                if (checkPermissions()) {
+                    if (!locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                        buildAlertMessageNoGps();
+                    }
+                    else {
+                        locText.setText(R.string.locations_searching);
+                        locationListener = new MyLocationListener();
+
+                        locationManager.requestLocationUpdates(LocationManager
+                                .GPS_PROVIDER, 3000, 10, locationListener);
+                    }
+                    recordAudio();
+                }
+
             }
         });
         stop.setOnClickListener(new View.OnClickListener() {
@@ -106,7 +111,56 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
+
+        locationManager = (LocationManager)
+                getSystemService(Context.LOCATION_SERVICE);
+
     }
+
+    boolean checkPermissions() {
+        if (ContextCompat.checkSelfPermission(this,
+                Manifest.permission.RECORD_AUDIO)
+                != PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(this,
+                        Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                        != PackageManager.PERMISSION_GRANTED ||
+        ContextCompat.checkSelfPermission(this,
+                Manifest.permission.INTERNET)
+                != PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(this,
+                        Manifest.permission.ACCESS_FINE_LOCATION)
+                        != PackageManager.PERMISSION_GRANTED) {
+
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.RECORD_AUDIO,
+                            Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                            Manifest.permission.INTERNET,
+                            Manifest.permission.ACCESS_FINE_LOCATION},
+                    0);
+
+            return false;
+        }
+        return true;
+    }
+
+    private void buildAlertMessageNoGps() {
+        final AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setMessage("Your GPS seems to be disabled, do you want to enable it?")
+                .setCancelable(false)
+                .setPositiveButton("Yes", new DialogInterface.OnClickListener() {
+                    public void onClick(final DialogInterface dialog, final int id) {
+                        startActivity(new Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS));
+                    }
+                })
+                .setNegativeButton("No", new DialogInterface.OnClickListener() {
+                    public void onClick(final DialogInterface dialog, final int id) {
+                        dialog.cancel();
+                    }
+                });
+        final AlertDialog alert = builder.create();
+        alert.show();
+    }
+
 
     void recordAudio() {
 
@@ -117,7 +171,6 @@ public class MainActivity extends AppCompatActivity {
             public boolean process(AudioEvent audioEvent) {
                 byte[] saveBuffer = audioEvent.getByteBuffer().clone();
                 queue.add(saveBuffer);
-                Log.d(LOG_TAG, Integer.toString(queue.size()));
                 if (queue.size() > MAX_BYTES && !save.get()) {
                     queue.remove();
                 }
@@ -155,9 +208,11 @@ public class MainActivity extends AppCompatActivity {
                 }
                 displayMax(fft.binToHz(maxIndex, SAMPLE_RATE), max);
 
-                if (Math.abs(fft.binToHz(maxIndex, SAMPLE_RATE) - 3000) < 200 && max > 30 && !save.get()) {
+                if (Math.abs(fft.binToHz(maxIndex, SAMPLE_RATE) - 3000) < 200 && max > 30
+                            && queue.size() > MAX_BYTES - 4 && !save.get()) {
                     Log.d(LOG_TAG, "saving audio");
                     saveAudio();
+                    requestStreet();
                 }
 
 
@@ -173,8 +228,17 @@ public class MainActivity extends AppCompatActivity {
         new Thread(dispatcher,"Audio Dispatcher").start();
     }
 
+
+    void displayMax(final double max, final float magnitude) {
+
+        runOnUiThread(new Runnable() {
+            public void run() {
+                maxText.setText(Double.toString(max) + "hz, magnitude:" + Float.toString(magnitude));
+            }
+        });
+    }
+
     void saveAudio() {
-        // used https://gist.github.com/kmark/d8b1b01fb0d2febf5770
 
         Thread t = new Thread() {
             @Override
@@ -195,12 +259,13 @@ public class MainActivity extends AppCompatActivity {
 
                 try {
 
-                    File wavFile = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "recording_" + (System.currentTimeMillis() / 1000 - 5) + ".wav");
+                    File wavFile = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                            "recording_" + (System.currentTimeMillis() / 1000 - 5) + ".wav");
                     FileOutputStream wavOut = new FileOutputStream(wavFile);
                     try {
 
                         // Write out the wav file header
-                        writeWavHeader(wavOut, CHANNEL_MASK, SAMPLE_RATE, ENCODING);
+                        WAVWriter.writeWavHeader(wavOut, CHANNEL_MASK, SAMPLE_RATE, ENCODING);
                         int counter = 0;
                         while (counter < MAX_BYTES) {
                             counter++;
@@ -225,7 +290,7 @@ public class MainActivity extends AppCompatActivity {
                     try {
                         // This is not put in the try/catch/finally above since it needs to run
                         // after we close the FileOutputStream
-                        updateWavHeader(wavFile);
+                        WAVWriter.updateWavHeader(wavFile);
                     } catch (IOException ex) {
                         ex.printStackTrace();
                     }
@@ -241,149 +306,62 @@ public class MainActivity extends AppCompatActivity {
         };
         t.start();
     }
-    void displayMax(final double max, final float magnitude) {
-
-        runOnUiThread(new Runnable() {
-            public void run() {
-                maxText.setText(Double.toString(max) + "hz, magnitude:" + Float.toString(magnitude));
-                counter ++;
-                Log.d(LOG_TAG, "counter" +counter);
-            }
-        });
-    }
 
 
-    /**
-     * Writes the proper 44-byte RIFF/WAVE header to/for the given stream
-     * Two size fields are left empty/null since we do not yet know the final stream size
-     *
-     * @param out         The stream to write the header to
-     * @param channelMask An AudioFormat.CHANNEL_* mask
-     * @param sampleRate  The sample rate in hertz
-     * @param encoding    An AudioFormat.ENCODING_PCM_* value
-     * @throws IOException
-     */
-
-
-    private static void writeWavHeader(OutputStream out, int channelMask, int sampleRate, int encoding) throws IOException {
-        short channels;
-        switch (channelMask) {
-            case AudioFormat.CHANNEL_IN_MONO:
-                channels = 1;
-                break;
-            case AudioFormat.CHANNEL_IN_STEREO:
-                channels = 2;
-                break;
-            default:
-                throw new IllegalArgumentException("Unacceptable channel mask");
-        }
-
-        short bitDepth;
-        switch (encoding) {
-            case AudioFormat.ENCODING_PCM_8BIT:
-                bitDepth = 8;
-                break;
-            case AudioFormat.ENCODING_PCM_16BIT:
-                bitDepth = 16;
-                break;
-            case AudioFormat.ENCODING_PCM_FLOAT:
-                bitDepth = 32;
-                break;
-            default:
-                throw new IllegalArgumentException("Unacceptable encoding");
-        }
-
-        writeWavHeader(out, channels, sampleRate, bitDepth);
-    }
-
-
-    /**
-     * Writes the proper 44-byte RIFF/WAVE header to/for the given stream
-     * Two size fields are left empty/null since we do not yet know the final stream size
-     *
-     * @param out        The stream to write the header to
-     * @param channels   The number of channels
-     * @param sampleRate The sample rate in hertz
-     * @param bitDepth   The bit depth
-     * @throws IOException
-     */
-
-
-    private static void writeWavHeader(OutputStream out, short channels, int sampleRate, short bitDepth) throws IOException {
-        // Convert the multi-byte integers to raw bytes in little endian format as required by the spec
-        byte[] littleBytes = ByteBuffer
-                .allocate(14)
-                .order(ByteOrder.LITTLE_ENDIAN)
-                .putShort(channels)
-                .putInt(sampleRate)
-                .putInt(sampleRate * channels * (bitDepth / 8))
-                .putShort((short) (channels * (bitDepth / 8)))
-                .putShort(bitDepth)
-                .array();
-
-        // Not necessarily the best, but it's very easy to visualize this way
-        out.write(new byte[]{
-                // RIFF header
-                'R', 'I', 'F', 'F', // ChunkID
-                0, 0, 0, 0, // ChunkSize (must be updated later)
-                'W', 'A', 'V', 'E', // Format
-                // fmt subchunk
-                'f', 'm', 't', ' ', // Subchunk1ID
-                16, 0, 0, 0, // Subchunk1Size
-                1, 0, // AudioFormat
-                littleBytes[0], littleBytes[1], // NumChannels
-                littleBytes[2], littleBytes[3], littleBytes[4], littleBytes[5], // SampleRate
-                littleBytes[6], littleBytes[7], littleBytes[8], littleBytes[9], // ByteRate
-                littleBytes[10], littleBytes[11], // BlockAlign
-                littleBytes[12], littleBytes[13], // BitsPerSample
-                // data subchunk
-                'd', 'a', 't', 'a', // Subchunk2ID
-                0, 0, 0, 0, // Subchunk2Size (must be updated later)
-        });
-    }
-
-
-    /**
-     * Updates the given wav file's header to include the final chunk sizes
-     *
-     * @param wav The wav file to update
-     * @throws IOException
-     */
-
-
-    private static void updateWavHeader(File wav) throws IOException {
-        byte[] sizes = ByteBuffer
-                .allocate(8)
-                .order(ByteOrder.LITTLE_ENDIAN)
-                // There are probably a bunch of different/better ways to calculate
-                // these two given your circumstances. Cast should be safe since if the WAV is
-                // > 4 GB we've already made a terrible mistake.
-                .putInt((int) (wav.length() - 8)) // ChunkSize
-                .putInt((int) (wav.length() - 44)) // Subchunk2Size
-                .array();
-
-        RandomAccessFile accessWave = null;
-        //noinspection CaughtExceptionImmediatelyRethrown
+    public void requestStreet() {
+        URL url;
+        HttpURLConnection urlConnection = null;
         try {
-            accessWave = new RandomAccessFile(wav, "rw");
-            // ChunkSize
-            accessWave.seek(4);
-            accessWave.write(sizes, 0, 4);
+            url = new URL("https://bikebump.media.mit.edu/api/road/closest?lng=" + longitude +
+                    "&lat=" + latitude);
 
-            // Subchunk2Size
-            accessWave.seek(40);
-            accessWave.write(sizes, 4, 4);
-        } catch (IOException ex) {
-            // Rethrow but we still close accessWave in our finally
-            throw ex;
-        } finally {
-            if (accessWave != null) {
-                try {
-                    accessWave.close();
-                } catch (IOException ex) {
-                    //
-                }
+            urlConnection = (HttpURLConnection) url
+                    .openConnection();
+
+            InputStream in = urlConnection.getInputStream();
+
+            InputStreamReader isw = new InputStreamReader(in);
+
+            int data = isw.read();
+            while (data != -1) {
+                char current = (char) data;
+                data = isw.read();
+                System.out.print(current);
             }
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            if (urlConnection != null) {
+                urlConnection.disconnect();
+            }
+        }
+    }
+
+
+
+    /*----------Listener class to get coordinates ------------- */
+    private class MyLocationListener implements LocationListener {
+        @Override
+        public void onLocationChanged(Location loc) {
+            longitude = loc.getLongitude();
+            latitude = loc.getLatitude();
+            locText.setText("long:" + longitude + " lang:" + latitude);
+        }
+
+        @Override
+        public void onProviderDisabled(String provider) {
+            // TODO Auto-generated method stub
+        }
+
+        @Override
+        public void onProviderEnabled(String provider) {
+            // TODO Auto-generated method stub
+        }
+
+        @Override
+        public void onStatusChanged(String provider,
+                                    int status, Bundle extras) {
+            // TODO Auto-generated method stub
         }
     }
 
