@@ -1,0 +1,62 @@
+{
+  "project_info": {
+    "project_number": "642352920574",
+    "firebase_url": "https://bikebump-ea3b1.firebaseio.com",
+    "project_id": "bikebump-ea3b1",
+    "storage_bucket": "bikebump-ea3b1.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:642352920574:android:5ef06d0fd5128368",
+        "android_client_info": {
+          "package_name": "edu.mit.media.bikebump.bikebumpandroid"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "642352920574-4khdqmfhgur4p31dieqs4vm2a64ojn5p.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "edu.mit.media.bikebump.bikebumpandroid",
+            "certificate_hash": "E4B071140084056712F52BC899BC627A63FD1685"
+          }
+        },
+        {
+          "client_id": "642352920574-9cbf6qohkj215h3r01uq2qfvipef3egi.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDJggV3ByUWqf2G1ewMgr7B75p7nMGHqNQ"
+        }
+      ],
+      "services": {
+        "analytics_service": {
+          "status": 1
+        },
+        "appinvite_service": {
+          "status": 2,
+          "other_platform_oauth_client": [
+            {
+              "client_id": "642352920574-9cbf6qohkj215h3r01uq2qfvipef3egi.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "642352920574-24hfnavgg2pvn7puq8l6i5v0s9pk1gpn.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "ChaningPlaces.Bike-Bump"
+              }
+            }
+          ]
+        },
+        "ads_service": {
+          "status": 2
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
