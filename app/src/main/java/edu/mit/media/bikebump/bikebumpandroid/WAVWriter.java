@@ -11,9 +11,12 @@ import java.nio.ByteOrder;
 
 /**
  * from https://gist.github.com/kmark/d8b1b01fb0d2febf5770
+ *
+ * helper class to write to wav files
  */
 
 public class WAVWriter {
+
 
     /**
      * Writes the proper 44-byte RIFF/WAVE header to/for the given stream

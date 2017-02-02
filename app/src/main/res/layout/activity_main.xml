@@ -1,11 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
-<android.support.constraint.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:background="@android:color/black"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     tools:context="edu.mit.media.bikebump.bikebumpandroid.MainActivity">
 
+    <com.google.android.gms.common.SignInButton
+        android:layout_alignParentRight="true"
+        android:id="@+id/sign_in_button"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content" />
+
+    <ImageView
+        android:id="@+id/start_button"
+        android:clickable="true"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:paddingTop="50dp"
+        android:visibility="gone"
+        android:layout_marginLeft="50dp"
+        android:layout_marginRight="50dp"
+        android:layout_centerHorizontal="true"
+        android:layout_centerVertical="true"
+        app:srcCompat="@drawable/start_button" />
+
+    <!--
     <Button
         android:id="@+id/btnStart"
         android:layout_width="wrap_content"
@@ -41,7 +62,8 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         app:layout_constraintTop_toBottomOf="@+id/locations_text"
-        android:text="@string/locations_default"
+        android:text="@string/road_default"
         app:layout_constraintLeft_toLeftOf="parent"/>
+        -->
 
-</android.support.constraint.ConstraintLayout>
+</RelativeLayout>
