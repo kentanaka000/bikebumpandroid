@@ -11,6 +11,7 @@ import android.location.LocationManager;
 import android.media.AudioFormat;
 import android.net.Uri;
 import android.os.Environment;
+import android.os.Vibrator;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
@@ -57,6 +58,7 @@ import java.net.URL;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayDeque;
+import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.net.ssl.HttpsURLConnection;
@@ -77,9 +79,11 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
     boolean isStarted = false;
 
+    Vibrator vibrator;
 
     long time; //keeps track of previous measurement's current time measurement
     int value;
+    float peak; //keeps track of last heigh of peak
 
     //================================================================================
     // Audio vars
@@ -88,10 +92,22 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     final int BUFFER_SIZE = 4096;
     final int CHANNEL_MASK = AudioFormat.CHANNEL_IN_MONO;
     final int ENCODING = AudioFormat.ENCODING_PCM_16BIT;
-    final int SECONDS_AUDIO = 10;
+    final int SECONDS_AUDIO = 5;
     final int BITS_IN_BYTES = 2;
     final int MAX_BYTES = SAMPLE_RATE * BITS_IN_BYTES * SECONDS_AUDIO / (BUFFER_SIZE * 2); //how many byte arrays fit in 10 sec
 
+    final int LOW_PASS_BOUND = 2800;
+    final int HIGH_PASS_BOUND = 2000;
+    final int BAND_PASS_WIDTH = 1000;
+    final int BAND_PASS_FREQ = 2400;
+    
+    final int LEFT_GAP = 3;
+    final int RIGHT_GAP = 3;
+    final int PEAK = 3200;
+    final double SLOPE1 = 5;
+    final double SLOPE2 = 5;
+    final int MIN_SIZE = 30;
+    final int TARGET_WIDTH = 3;
 
     ArrayDeque<byte[]> queue = new ArrayDeque<>(); //linked list with previous 10 seconds of audio
     AtomicBoolean audioWaiting = new AtomicBoolean(false);//true means audio should not detect more rings
@@ -149,6 +165,9 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         setContentView(R.layout.activity_main);
 
         start = (ImageView) findViewById(R.id.start_button);
+
+        vibrator = (Vibrator) this.getSystemService(Context.VIBRATOR_SERVICE);
+
 
         /*
         start = (Button) findViewById(R.id.btnStart);
@@ -369,6 +388,9 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     // audio stuff
     //================================================================================
 
+    int hzToBin(int hz) {
+        return hz * BUFFER_SIZE / SAMPLE_RATE;
+    }
 
     void recordAudio() {
 
@@ -390,9 +412,9 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
             }
         });
-        dispatcher.addAudioProcessor(new LowPassFS(3500, SAMPLE_RATE));
-        dispatcher.addAudioProcessor(new HighPass(2500, SAMPLE_RATE));
-        dispatcher.addAudioProcessor(new BandPass(3000, 1000, SAMPLE_RATE));
+        dispatcher.addAudioProcessor(new LowPassFS(LOW_PASS_BOUND, SAMPLE_RATE));
+        dispatcher.addAudioProcessor(new HighPass(HIGH_PASS_BOUND, SAMPLE_RATE));
+        dispatcher.addAudioProcessor(new BandPass(BAND_PASS_FREQ, BAND_PASS_WIDTH, SAMPLE_RATE));
         dispatcher.addAudioProcessor(new AudioProcessor() {
 
             FFT fft = new FFT(BUFFER_SIZE);
@@ -408,26 +430,55 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
                 float max = 0;
                 int maxIndex = 0;
+                int peakBin = hzToBin(PEAK);
+                /*
+                for (int i = peakBin - TARGET_WIDTH; i <= peakBin + TARGET_WIDTH; i++) {
+                    if(amplitudes[i] > max) {
+                        maxIndex = i;
+                        max = amplitudes[i];
+                    }
+                }*/
+
                 for (int i = 0; i < amplitudes.length; i++) {
                     if(amplitudes[i] > max) {
                         maxIndex = i;
                         max = amplitudes[i];
                     }
                 }
-                //displayMax(fft.binToHz(maxIndex, SAMPLE_RATE), max);
 
-                if (Math.abs(fft.binToHz(maxIndex, SAMPLE_RATE) - 3000) < 200 &&
-                        queue.size() > MAX_BYTES / 2 + 1 && max > 30 && isLocationReady) {
-                    if (!audioWaiting.get()) {
-                        Log.d(LOG_TAG, "saving audio");
-                        audioWaiting.set(true);
-                        value = 0;
-                        time = System.currentTimeMillis();
-                        saveAudio();
-                        postLocation();
+                /*if(max > MIN_SIZE) {
+                    for (int i = 0; i < amplitudes.length; i++) {
+
+                        Log.d(TAG,Double.toString(fft.binToHz(i, 44100)) + " " + Float.toString(amplitudes[i]));
                     }
-                    else if(System.currentTimeMillis() - time < 750) {
-                        value = 1;
+                }*/
+
+
+
+                //displayMax(fft.binToHz(maxIndex, SAMPLE_RATE), max);
+                if(max > MIN_SIZE && Math.abs(maxIndex - hzToBin(PEAK)) < TARGET_WIDTH) {
+                    /*for (int i = peakBin - 10; i <= peakBin + 10; i++) {
+
+                    Log.e(TAG, Double.toString(fft.binToHz(maxIndex, 44100)) + " " + Float.toString(amplitudes[i]));
+                }*/
+                    float s1 = (amplitudes[maxIndex] - amplitudes[maxIndex - LEFT_GAP])/LEFT_GAP;
+                    float s2 = (amplitudes[maxIndex] - amplitudes[maxIndex - RIGHT_GAP])/RIGHT_GAP;
+                    //Log.e(TAG, Float.toString(s1) + " " + Float.toString(s2) + " " +
+                    //        Double.toString(fft.binToHz(maxIndex, 44100)) + " " + max);
+                    if(s1 > SLOPE1 && s2 > SLOPE2) {
+                        vibrator.vibrate(500);
+                        //Log.e(LOG_TAG, "saving audio");
+                        if (!audioWaiting.get()) {
+                            audioWaiting.set(true);
+                            value = 0;
+                            time = System.currentTimeMillis();
+                            saveAudio();
+                            postLocation();
+                        }
+                        else if(System.currentTimeMillis() - time < 1000 && max > peak + 5) {
+                            value = 1;
+                        }
+                        peak = max;
                     }
                 }
 
@@ -455,12 +506,11 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     }
 
     void saveAudio() {
-
         Thread t = new Thread() {
             @Override
             public void run() {
                 try {
-                    Thread.sleep(5000);
+                    Thread.sleep(SECONDS_AUDIO * 1000 / 2);
                 }
                 catch (InterruptedException e) {
                     return;
@@ -468,7 +518,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
                 try {
 
-                    File wavFile = new File(getFilesDir(), "recording_t=" + time + "_lat=" +
+                    File wavFile = new File(getFilesDir(), "t=" + time + "_lat=" +
                             latitude + "_lng=" + longitude + "_uid=" + uid + ".wav");
                     String filePath = wavFile.getPath();
                     FileOutputStream wavOut = new FileOutputStream(wavFile);
